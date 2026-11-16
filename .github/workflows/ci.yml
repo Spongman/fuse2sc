@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:  # the release workflow runs this first
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The SolidCraft the golden tests run against. Bump both together; get the hash with
+  #   sha256sum solidcraft-<version>-windows-x64-portable.zip
+  SOLIDCRAFT_VERSION: "0.42.0"
+  SOLIDCRAFT_SHA256: "fd3671f9c43a1a8ad26e1b6574592170b3fee8e632d05544607a789fbcdb86a0"
+
+jobs:
+  checks:
+    name: Lint, format, types, consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - name: ruff
+        run: python -m ruff check src tools tests fusion_addin
+      - name: formatting
+        run: python -m ruff format --check src tools tests fusion_addin
+      - name: types
+        run: python -m mypy
+      - name: add-in types
+        run: python -m mypy -p fuse2sc_fusion -m Fuse2SC
+      - name: Versions agree
+        run: python tools/check_version.py
+      - name: The add-in carries the current IR
+        run: python tools/sync_addin.py --check
+
+  unit:
+    name: Unit tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e ".[dev]"
+      - name: Tests (golden tests skip without SolidCraft)
+        run: python -m pytest -q -m "not live"
+
+  golden:
+    name: Golden tests against SolidCraft
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - name: Cache SolidCraft
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\solidcraft
+          key: solidcraft-${{ env.SOLIDCRAFT_VERSION }}-windows-x64-${{ env.SOLIDCRAFT_SHA256 }}
+      - name: Download SolidCraft (checksum verified)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $v = $env:SOLIDCRAFT_VERSION
+          $zip = Join-Path $env:RUNNER_TEMP "solidcraft.zip"
+          Invoke-WebRequest "https://github.com/tangency-labs/solidcraft/releases/download/v$v/solidcraft-$v-windows-x64-portable.zip" -OutFile $zip
+          $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:SOLIDCRAFT_SHA256) { throw "SolidCraft download hash $got does not match the pinned hash" }
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP "solidcraft") -Force
+      - name: Find solidcraft-cli
+        shell: pwsh
+        run: |
+          $cli = Get-ChildItem (Join-Path $env:RUNNER_TEMP "solidcraft") -Recurse -Filter solidcraft-cli.exe | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $cli) { throw "solidcraft-cli.exe not found in the download" }
+          "SOLIDCRAFT_CLI=$cli" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $cli --version
+      - name: Golden tests
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q -m live
+      - name: fuse2sc doctor
+        run: python -m fuse2sc doctor

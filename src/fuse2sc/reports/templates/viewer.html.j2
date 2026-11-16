@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }}</title>
+<style>
+:root { --bg:#f4f5f7; --fg:#1b1f24; --panel:#fff; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --panel:#161b22; } }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px system-ui, sans-serif; }
+header { padding:10px 16px; }
+main { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 16px 16px; height:calc(100vh - 60px); }
+@media (max-width:700px) { main { grid-template-columns:1fr; height:auto; } main > div { height:60vh; } }
+main > div { position:relative; background:var(--panel); border-radius:8px; overflow:hidden; }
+main > div span { position:absolute; top:8px; left:10px; font-weight:600; }
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<header><b>{{ title }}</b>: Fusion (left) and SolidCraft (right). Drag to turn; the views turn together.</header>
+<main><div id="fusion"><span>Fusion</span></div><div id="solidcraft"><span>SolidCraft</span></div></main>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+
+const STL = "{{ stl }}", GLB = "{{ glb }}";
+const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+
+function viewport(el) {
+	const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+	el.appendChild(renderer.domElement);
+	const scene = new THREE.Scene();
+	scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 2.2));
+	const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+	sun.position.set(1, 2, 3);
+	scene.add(sun);
+	const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 1e6);
+	camera.up.set(0, 0, 1);
+	const controls = new OrbitControls(camera, renderer.domElement);
+	const fit = () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); };
+	new ResizeObserver(fit).observe(el);
+	fit();
+	return { renderer, scene, camera, controls };
+}
+
+// Each side is framed on its own model (the two files may be in different units);
+// the views share their viewing direction.
+function frame(v, object) {
+	const box = new THREE.Box3().setFromObject(object);
+	const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length() || 1;
+	v.camera.near = size / 1000; v.camera.far = size * 50;
+	v.camera.position.copy(center).add(new THREE.Vector3(size, -size, size * 0.8));
+	v.camera.updateProjectionMatrix();
+	v.controls.target.copy(center);
+	v.controls.update();
+}
+
+const left = viewport(document.getElementById("fusion")), right = viewport(document.getElementById("solidcraft"));
+if (STL) {
+	const geometry = new STLLoader().parse(bytes(STL));
+	geometry.computeVertexNormals();
+	const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x8fa3bf, roughness: 0.6 }));
+	left.scene.add(mesh);
+	frame(left, mesh);
+}
+if (GLB) {
+	new GLTFLoader().parse(bytes(GLB), "", (gltf) => {
+		gltf.scene.rotation.x = Math.PI / 2;  // glTF is Y-up
+		gltf.scene.updateMatrixWorld(true);
+		right.scene.add(gltf.scene);
+		frame(right, gltf.scene);
+	});
+}
+let syncing = false;
+function follow(from, to) {
+	from.controls.addEventListener("change", () => {
+		if (syncing) return;
+		syncing = true;
+		const direction = from.camera.position.clone().sub(from.controls.target).normalize();
+		const distance = to.camera.position.distanceTo(to.controls.target);
+		to.camera.position.copy(to.controls.target).add(direction.multiplyScalar(distance));
+		to.camera.up.copy(from.camera.up);
+		to.controls.update();
+		syncing = false;
+	});
+}
+follow(left, right);
+follow(right, left);
+(function loop() {
+	requestAnimationFrame(loop);
+	left.renderer.render(left.scene, left.camera);
+	right.renderer.render(right.scene, right.camera);
+})();
+</script>
+</body></html>

@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuse2sc"
+version = "0.1.0"
+description = "Move Autodesk Fusion designs to SolidCraft with their parametric history, checked step by step."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.10,<2",          # the official Model Context Protocol SDK: SolidCraft's session
+  "pydantic>=2.7,<3",      # the IR and workspace settings as typed models
+  "numpy>=1.26",           # transforms and geometry checks
+  "typer>=0.12",           # the command line
+  "rich>=13",              # terminal output
+  "jinja2>=3.1",           # reports and the 3D viewer
+  "httpx>=0.27",           # the Fusion bridge client
+  "anyio>=4",              # async runtime (also what mcp uses)
+  "packaging>=23",         # SolidCraft version ranges for workarounds
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Computer Aided Design",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "hypothesis>=6.100", "ruff>=0.6", "mypy>=1.10", "build>=1"]
+
+[project.scripts]
+fuse2sc = "fuse2sc.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"fuse2sc.reports" = ["templates/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests", "tests/golden"]
+addopts = "-p no:cacheprovider"
+markers = [
+  "live: needs solidcraft-cli (set SOLIDCRAFT_CLI or put it on PATH); skipped otherwise",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["fusion_addin/Fuse2SC/fuse2sc_ir"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "PL", "BLE", "RET", "PTH", "ANN"]
+ignore = [
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # handlers are case analyses; complexity is reviewed by hand
+  "PLR2004",                                   # numbers in tests and tolerances are documented where they live
+  "RUF001", "RUF002", "RUF003",                # we write ×, ³ and – on purpose
+  "ANN401",                                    # Any is the honest type for JSON from SolidCraft and Fusion
+  "W191",                                      # we indent with tabs (the formatter's indent-style)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fuse2sc", "fuse2sc_ir", "fuse2sc_fusion", "irkit", "fake_port", "conftest"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "tab"
+
+[tool.ruff.lint.per-file-ignores]
+"fusion_addin/**" = ["UP", "PTH", "BLE001", "SIM105"]  # Fusion's Python is not ours; reads are guarded on purpose
+"src/fuse2sc/translate/**" = ["RET503"]          # handlers return early with `return t.fallback(...)`, which is None
+"tests/**" = ["PLC0415", "B017"]
+"tests/**/test_*.py" = ["ANN"]                  # pytest tests and fixtures stay unannotated
+"tools/**" = ["PLC0415"]
+"src/fuse2sc/cli.py" = ["PLR0917"]                # typer turns a command's parameters into its options
+"tests/golden/irkit.py" = ["PLR0917"]          # shape builders read best positionally
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["fuse2sc"]
+mypy_path = ["src", "fusion_addin/Fuse2SC"]  # the add-in: python -m mypy -p fuse2sc_fusion -m Fuse2SC
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_any_generics = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["adsk", "adsk.*"]  # Fusion's API ships with Fusion, without type stubs
+ignore_missing_imports = true

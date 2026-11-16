@@ -1,0 +1,37 @@
+{{ r.document }} -> {{ r.out or "(not saved)" }}
+
+RESULT: {{ r.category | upper }}: {{ CATEGORY[r.category][1] }}
+steps: {% for k, n in r.counts | dictsort %}{{ n }} {{ k }}{{ ", " if not loop.last }}{% endfor %}
+
+{{ r.commands }} SolidCraft commands, {{ r.failed | length }} failed, {{ r.dropped | length }} optional dropped; SolidCraft {{ r.solidcraft_version or "?" }}; {{ r.seconds }} s
+
+{% if r.final_problems %}
+FINAL CHECK: {{ r.final_problems | join("; ") }}
+
+{% endif %}
+{% if r.verify %}
+VERIFY (saved file re-measured): {{ "ok" if r.verify.ok else "NOT OK" }}{% if r.verify.notes %}: {{ r.verify.notes | join("; ") }}{% endif %}
+
+{% endif %}
+Steps:
+{% for s in r.steps %}
+  {{ "%4d" | format(s.index) }}  {{ "%-20s" | format(STATUS.get(s.status, s.status)) }} {{ "%-34s" | format(s.name[:34]) }} {{ s.kind or "" }}
+{% for d in s.details[:4] %}
+        - {{ d }}
+{% endfor %}
+{% endfor %}
+{% if r.needed_steps %}
+
+Fusion results needed but not available (run "Export requested Fusion results" in Fusion, then build again):
+{% for k, v in r.needed_steps.items() %}
+  step {{ k }}: {{ v | join(", ") }}
+{% endfor %}
+{% endif %}
+{% for title, items in [("Failed commands", r.failed), ("Notes", r.notes), ("Checks", r.log), ("Dropped (optional)", r.dropped)] if items %}
+
+{{ title }}:
+{% for it in items %}
+  {% if it.note is defined %}step {{ it.step }}: {{ it.note }}{% else %}{{ it }}{% endif %}
+
+{% endfor %}
+{% endfor %}

@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# The add-in's per-machine settings (written by tools/install_addin.py)
+fusion_addin/Fuse2SC/config.json
+
+# Design data never belongs in this repository: it lives in your own workspace.
+*.f3d
+*.f3z
+*.step
+*.stp
+*.stl
+*.sc
+*.glb
+*.solidcraft
+/designs/
+/reports/
+/fusion-to-solidcraft.json

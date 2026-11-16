@@ -1,0 +1,23 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = tab
+indent_size = 4
+tab_width = 4
+
+# YAML forbids tabs; Markdown and TOML read better with spaces.
+[*.{yml,yaml,toml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+indent_style = space
+trim_trailing_whitespace = false
+
+# Text output: their indentation is what the reports show.
+[src/fuse2sc/reports/templates/{report.txt.j2,scorecard.md.j2}]
+indent_style = space

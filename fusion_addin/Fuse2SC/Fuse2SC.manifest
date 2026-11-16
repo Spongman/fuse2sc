@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "Fuse2SC",
+	"author": "fuse2sc contributors",
+	"description": {
+		"": "Export designs to SolidCraft with their timeline as editable history, checked against Fusion step by step."
+	},
+	"version": "0.1.0",
+	"runOnStartup": true,
+	"supportedOS": "mac|windows",
+	"editEnabled": true
+}

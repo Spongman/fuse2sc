@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fuse2sc scorecard</title>
+<style>
+:root { --bg:#fff; --fg:#1b1f24; --mut:#59636e; --line:#d8dee4; --hi:#f6f8fa; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --mut:#9198a1; --line:#30363d; --hi:#161b22; } }
+body { background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; margin:0; padding:16px; }
+h1 { font-size:20px; } p { color:var(--mut); }
+.cards { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
+.card { border:1px solid var(--line); border-radius:8px; padding:8px 12px; min-width:110px; }
+.card b { display:block; font-size:20px; }
+.wrap { overflow-x:auto; } table { border-collapse:collapse; width:100%; }
+th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+th { background:var(--hi); position:sticky; top:0; } a { color:inherit; }
+</style></head>
+<body>
+<h1>Fusion → SolidCraft scorecard</h1>
+<p>{{ header }}{% if steps %} · {{ kept }} of {{ steps }} steps rebuilt with history{% endif %}</p>
+<div class="cards">
+{% for c in order if categories[c] %}
+	<div class="card"><b>{{ categories[c] }}</b>{{ CATEGORY[c][0] }} {{ c }}</div>
+{% endfor %}
+</div>
+<div class="wrap"><table>
+<thead><tr><th>Category</th><th>Design</th><th>Steps kept</th><th>Fusion results</th><th>First blocker</th><th>Verify</th></tr></thead>
+<tbody>
+{% for r in rows %}
+{% set href = r.link(reports) %}
+<tr><td>{{ CATEGORY[r.category][0] }} {{ r.category }}</td>
+<td>{% if href %}<a href="{{ href }}">{{ r.design }}</a>{% else %}{{ r.design }}{% endif %}</td>
+<td>{% if r.result %}{{ r.kept }}/{{ r.live | length }}{% endif %}</td><td>{% if r.result %}{{ r.substituted }}{% endif %}</td>
+<td>{% if r.blocker %}{{ r.blocker.kind }} ({{ r.blocker.name }}){% endif %}</td><td>{{ r.verify_text }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+</body></html>

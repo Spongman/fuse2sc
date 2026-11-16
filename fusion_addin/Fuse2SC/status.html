@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SolidCraft</title>
+<style>
+	:root { --bg:#f6f7f9; --fg:#1d2127; --muted:#5b6470; --panel:#fff; --line:#e1e4e8; --accent:#2d6cdf; --warn:#9a5b00; --bad:#c42b2b; }
+	@media (prefers-color-scheme: dark) {
+		:root { --bg:#1d1f23; --fg:#e7e9ec; --muted:#a3abb5; --panel:#26292e; --line:#383c43; --accent:#6aa0ff; --warn:#e0a24a; --bad:#ff7070; }
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 13px system-ui, "Segoe UI", sans-serif; }
+	h1 { margin: 0 0 6px; font-size: 14px; overflow-wrap: anywhere; }
+	#phase { min-height: 1.4em; color: var(--muted); }
+	progress { width: 100%; height: 8px; margin: 6px 0 10px; accent-color: var(--accent); }
+	.tally { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+	.tally div { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+	.tally b { display: block; font-size: 18px; }
+	#from_fusion { color: var(--warn); } #failed { color: var(--bad); }
+	#summary { display: none; margin: 8px 0; white-space: pre-wrap; }
+	ol { list-style: none; margin: 0; padding: 4px 6px; height: 280px; overflow-y: auto; background: var(--panel);
+	     border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+	li { padding: 2px 0; border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+	li.fusion { color: var(--warn); } li.failed { color: var(--bad); } li.note { color: var(--muted); }
+	nav { display: none; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+	button { font: inherit; padding: 4px 10px; }
+</style>
+</head>
+<body>
+<h1 id="title">SolidCraft export</h1>
+<div id="phase">Starting…</div>
+<progress id="progress" value="0" max="1"></progress>
+<div class="tally">
+	<div><b id="from_fusion">0</b>steps from Fusion</div>
+	<div><b id="failed">0</b>failed</div>
+</div>
+<div id="summary"></div>
+<ol id="log"></ol>
+<nav id="actions">
+	<button data-action="open">Open in SolidCraft</button>
+	<button data-action="report">Show report</button>
+	<button data-action="folder">Show folder</button>
+</nav>
+<script>
+	const $ = (id) => document.getElementById(id);
+	const send = (action) => adsk.fusionSendData(action, "{}");
+	document.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => send(b.dataset.action)));
+
+	function update(m) {
+		if (m.reset) {
+			$("log").replaceChildren();
+			["from_fusion", "failed"].forEach((k) => ($(k).textContent = "0"));
+			$("summary").style.display = $("actions").style.display = "none";
+			$("progress").value = 0;
+		}
+		if ("title" in m) $("title").textContent = m.title;
+		if ("phase" in m) $("phase").textContent = m.phase;
+		if (m.max) { $("progress").max = m.max; $("progress").value = m.value ?? 0; }
+		["from_fusion", "failed"].forEach((k) => { if (k in m) $(k).textContent = m[k]; });
+		for (const { kind, text } of m.lines ?? []) {
+			if (!text) continue;
+			const li = document.createElement("li");
+			li.className = kind;
+			li.textContent = text;
+			$("log").append(li);
+			$("log").scrollTop = $("log").scrollHeight;
+		}
+		if (m.summary) { $("summary").textContent = m.summary; $("summary").style.display = "block"; }
+		if (m.done) $("actions").style.display = "flex";
+	}
+
+	let heard = false;
+	window.fusionJavaScriptHandler = {
+		handle(action, data) {
+			heard = true;
+			try { if (action === "update") update(JSON.parse(data)); } catch (e) { return `error ${e}`; }
+			return "OK";
+		},
+	};
+	// Fusion's link to the page can come up after it loads: say "ready" until Fusion answers.
+	(function hello() {
+		if (heard) return;
+		try { if (window.adsk?.fusionSendData) send("ready"); } catch (e) { /* not yet */ }
+		setTimeout(hello, 250);
+	})();
+</script>
+</body>
+</html>

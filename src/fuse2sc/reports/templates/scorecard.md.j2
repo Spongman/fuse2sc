@@ -1,0 +1,34 @@
+# Conversion scorecard
+
+{{ header }}
+
+| Category | Designs |
+|---|---|
+{% for c in order if categories[c] %}
+| {{ CATEGORY[c][0] }} {{ c }} | {{ categories[c] }} |
+{% endfor %}
+{% if steps %}
+
+Steps rebuilt with history: **{{ kept }} of {{ steps }}** ({{ "%.0f" | format(100 * kept / steps) }}%)
+{% endif %}
+{% if blockers %}
+
+## What stops history first
+
+The feature type of each design's first step that came in as Fusion's result or failed. Fixing the
+top rows, in fuse2sc or upstream in SolidCraft, helps the most designs.
+
+| Feature type | Designs it stops first | Steps affected overall |
+|---|---|---|
+{% for kind, n in blockers %}
+| {{ kind }} | {{ n }} | {{ affected[kind] }} |
+{% endfor %}
+{% endif %}
+
+## Designs
+
+| | Design | Steps kept | Fusion results | Failed | First blocker | Verify |
+|---|---|---|---|---|---|---|
+{% for r in rows %}
+| {{ CATEGORY[r.category][0] }} | {{ r.design }} | {% if r.result %}{{ r.kept }}/{{ r.live | length }}{% endif %} | {% if r.result %}{{ r.substituted }}{% endif %} | {% if r.result %}{{ r.failed }}{% endif %} | {% if r.blocker %}{{ r.blocker.kind }} ({{ r.blocker.name }}){% endif %} | {{ r.verify_text }} |
+{% endfor %}

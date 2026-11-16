@@ -1,0 +1,157 @@
+name: Release
+
+# Push a tag to release:   git tag v0.1.0 && git push origin v0.1.0
+# The tag must match the version in pyproject.toml, src/fuse2sc/__init__.py, the add-in manifest and
+# fuse2sc_fusion/export.py (tools/check_version.py). Tags with a hyphen (v0.2.0-rc.1) are published
+# as pre-releases.
+#
+# Publishing to PyPI is off until you set the repository variable PUBLISH_PYPI to "true" and add
+# this repository as a trusted publisher of the fuse2sc project on PyPI (environment "pypi"); no
+# token is stored here.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build a release for, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - id: tag
+        name: Which tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "not a release tag: $tag" >&2; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: check
+        name: Tag matches the version everywhere
+        run: |
+          v=$(python tools/check_version.py --tag "${{ steps.tag.outputs.tag }}")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Tests
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build the release files
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python package (wheel and sdist)
+        run: |
+          python -m pip install build
+          python -m build --outdir dist
+      - name: Fusion add-in (self-contained zip)
+        run: python tools/package_addin.py --out dist
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+      - name: Release notes
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          {
+            echo "## Install"
+            echo
+            echo "- **Command line:** \`pip install fuse2sc-$VERSION-py3-none-any.whl\` (Python 3.11+; or \`pipx install\` it), then \`fuse2sc doctor\`. You need SolidCraft (\`solidcraft-cli\`)."
+            echo "- **Fusion add-in:** unzip \`Fuse2SC-fusion-addin-$VERSION.zip\`; in Fusion press Shift+S, open Add-Ins, click **+** and pick the \`Fuse2SC\` folder. It runs builds with the \`fuse2sc\` you installed."
+            echo "- Check downloads against \`SHA256SUMS.txt\`."
+            echo
+            echo "## Changes"
+            echo
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s (%h)' "$prev..$TAG"
+            else
+              git log --no-merges --pretty='- %s (%h)' "$TAG"
+            fi
+          } > notes.md
+          cat notes.md
+      - name: Create or update the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          flags=()
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file notes.md "${flags[@]}"
+          else
+            gh release create "$TAG" dist/* --title "fuse2sc $TAG" --notes-file notes.md --verify-tag "${flags[@]}"
+          fi
+
+  pypi:
+    name: Publish to PyPI
+    needs: [version, build, github-release]
+    if: vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing: no stored token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+      - name: Only the Python package
+        run: find dist -type f ! -name '*.whl' ! -name '*.tar.gz' -delete && ls dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
